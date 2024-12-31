@@ -3,6 +3,7 @@
 This python program expects a file with all the mods you want to download from nexus mods. It works with premium or non premium account.
 
 Example output.txt file:
+
 https://www.nexusmods.com/skyrimspecialedition/mods/84686?tab=files&file_id=364791
 https://www.nexusmods.com/skyrimspecialedition/mods/61497?tab=files&file_id=254891
 https://www.nexusmods.com/skyrimspecialedition/mods/55282?tab=files&file_id=237992
