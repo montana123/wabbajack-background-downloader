@@ -1,0 +1,5 @@
+.env
+download.log
+output.txt
+processed_output.txt
+skip.log

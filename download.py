@@ -4,13 +4,16 @@ import random
 import os
 import re
 import sys
+import datetime
+from dotenv import load_dotenv
+
+# Load the .env file
+load_dotenv()
 
 ### Set variables here ###
 links_file = "output.txt"
-# Login to Nexus and go to a single mod page up until the slow download button. Open web console, network tab and click on slow download. See the Post Request and copy the value of cookie in here
-session_cookies = ""
-#download_directory = "downloads"
-download_directory = "E:\Wabbajack Downloads"
+session_cookies = os.getenv('SESSION_COOKIES')
+download_directory = "downloads"
 output_file = "output.txt"
 processed_file = "processed_output.txt"
 log_download_path = "download.log"
@@ -29,7 +32,6 @@ def read_links(file_path):
 
 # Function to extract file_id and game_id from the URL
 def extract_ids_from_url(url):
-    # Extract the file_id and game_id using a regular expression
     match = re.search(r"file_id=(\d+)", url)
     if match:
         file_id = match.group(1)
@@ -64,18 +66,11 @@ def make_post_request(referer_url, file_id, game_id):
     if response.status_code == 200:
         print(f"Request successful to {referer_url}")
         try:
-            # Inspect the response content type
             response_data = response.json()
-            print("Response Content: ", response.text)  # Print response to debug
-
-            # Check if response_data is a list and try to extract the URL
             if isinstance(response_data, list):
-                # Assuming the first element in the list contains the desired data
                 download_url = response_data[0].get("url", "")
             else:
-                # If it's not a list, handle it as if it were a dictionary
                 download_url = response_data.get("url", "")
-
             if download_url:
                 return download_url
             else:
@@ -87,18 +82,12 @@ def make_post_request(referer_url, file_id, game_id):
     
     return None
 
-def download_file(download_url, referer_url):
+def download_file(download_url, referer_url,):
     try:
-        # Ensure the directory exists
         os.makedirs(download_directory, exist_ok=True)
-        
-        # Extract the file name from the download URL
         file_name = download_url.split("/")[-1].split("?")[0]
-        
-        # Define the full path to save the file
         file_path = os.path.join(download_directory, file_name)
         
-        # Check if the file already exists
         if os.path.exists(file_path):
             with open(log_skip_path, "a") as skip_log:
                 skip_log.write(f"Skipped: {file_name} (already exists) - URL: {referer_url}\n")
@@ -110,32 +99,51 @@ def download_file(download_url, referer_url):
         response = requests.get(download_url, stream=True)
         
         if response.status_code == 200:
-            # Get total file size from the headers
+            # Try to get the total file size from the headers, but allow for zero
             total_size = int(response.headers.get('content-length', 0))
+            if total_size == 0:
+                total_size = None  # Set to None if size is not available
+
             downloaded_size = 0
+            start_time = time.time()
             
-            # Save the file to the specified location
             with open(file_path, 'wb') as file:
                 for chunk in response.iter_content(chunk_size=1024):
                     if chunk:
                         file.write(chunk)
                         downloaded_size += len(chunk)
-                        
-                        # Calculate percentage
-                        percentage = (downloaded_size / total_size) * 100
-                        
-                        # Print the progress bar
+
+                        # Calculate download speed and progress
+                        elapsed_time = time.time() - start_time
+
+                        # Avoid division by zero when calculating speed
+                        speed = 0  # Default speed is 0
+                        if elapsed_time > 0:  # Ensure time has passed before calculating speed
+                            speed = downloaded_size / elapsed_time / 1024  # Speed in KB/s
+
+                        # Avoid division by zero when calculating percentage
+                        percentage = 0
+                        if total_size and total_size > 0:  # Only calculate percentage if total_size is non-zero
+                            percentage = (downloaded_size / total_size) * 100
+
+                        # Calculate total size in MB, if available
+                        total_size_mb = "N/A"
+                        if total_size and total_size > 0:
+                            total_size_mb = total_size / 1024 / 1024  # Convert bytes to MB
+
+                        # Print the stats with N/A if total size is unavailable
                         progress_bar = '=' * int(percentage // 2)
-                        remaining_bar = ' ' * (50 - len(progress_bar))  # 50 is the width of the progress bar
-                        sys.stdout.write(f"\r[{progress_bar}{remaining_bar}] {percentage:.2f}%")
+                        remaining_bar = ' ' * (50 - len(progress_bar))
+                        sys.stdout.write(f"\r[{progress_bar}{remaining_bar}] {percentage:.2f}% | "
+                                        f"Speed: {speed:.2f} KB/s | "
+                                        f"Downloaded: {downloaded_size / 1024 / 1024:.2f} MB / "
+                                        f"{total_size_mb} MB")
                         sys.stdout.flush()
-            
-            # Log the successful download
+
             with open(log_download_path, "a") as download_log:
                 download_log.write(f"{referer_url}\n")
             
             print(f"\nDownloaded {file_name} to {file_path}")
-            
             remove_line(referer_url)
         
         else:
@@ -144,26 +152,24 @@ def download_file(download_url, referer_url):
     except Exception as e:
         print(f"Error downloading file: {e}")
 
-
 def remove_line(referer_url):
     with open(output_file, "r") as f:
-                lines = f.readlines()
-            
-    # Remove the line corresponding to the current referer_url
+        lines = f.readlines()
+    
     with open(output_file, "w") as f:
         for line in lines:
-            if line.strip() != referer_url:  # Ensure we're not removing the current referer_url
+            if line.strip() != referer_url:
                 f.write(line)
     
-    # Append the processed referer_url to processed_output.txt
     with open(processed_file, "a") as f:
         f.write(f"{referer_url}\n")
-        
+
 # Function to process links line by line
 def process_links(links):
-    for link in links:
+    total_files = len(links)
+    for index, link in enumerate(links):
+        print(f"\nRemaining downloads: {total_files - index} / {total_files}")
         referer_url = link
-        # Extract file_id and game_id from the URL
         file_id, game_id = extract_ids_from_url(referer_url)
         if file_id and game_id:
             download_url = make_post_request(referer_url, file_id, game_id)
